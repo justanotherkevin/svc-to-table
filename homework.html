@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>Page Title</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://d3js.org/d3.v4.min.js"></script>
+  </head>
+  <style>
+    table {
+      border-collapse: collapse;
+      border: 2px black solid;
+      font: 12px sans-serif;
+      table-layout: fixed;
+    }
+    th {
+      text-transform: capitalize;
+      min-width: 100px;
+      border: 1px gray solid;
+    }
+    td {
+      border: 1px black solid;
+      padding: 5px;
+    }
+    tbody tr:nth-child(even) {
+      background: rgba(202, 229, 247, 0.2);
+    }
+    tbody tr:nth-child(odd) {
+      background: rgba(221, 227, 251, 0.52);
+    }
+    .sorting {
+      display: inline-block;
+      transition: all 0.3s;
+      margin: 0 5px;
+    }
+    .sorting.ase {
+      border-bottom: var(--size) solid lightcoral;
+    }
+    .sorting.des {
+      transform: rotate(180deg);
+      border-bottom: var(--size) solid lightblue;
+    }
+    .arrow-down {
+      --size: 7px;
+      width: 0;
+      height: 0;
+      border-left: var(--size) solid transparent;
+      border-right: var(--size) solid transparent;
+      border-top: var(--size) solid #f00;
+    }
+    .arrow-up {
+      --size: 7px;
+      width: 0;
+      height: 0;
+      border-left: var(--size) solid transparent;
+      border-right: var(--size) solid transparent;
+      border-bottom: var(--size) solid black;
+    }
+    div.tooltip {
+      position: absolute;
+      text-align: center;
+      padding: 10px;
+      min-width: 50px;
+      background: lightsteelblue;
+      border: 0px;
+      border-radius: 8px;
+      opacity: 0;
+      transition: all 0.14s;
+
+      /*  pointer-events: none;	This line needs to be removed */
+    }
+    #search-form,
+    #nav-btn {
+      padding: 0 0 10px;
+    }
+    #search-form * {
+      margin-right: 10px;
+      border-radius: 4px;
+    }
+    #nav-btn button {
+      margin: 0 10px 0 0;
+      padding: 0 10px;
+    }
+  </style>
+  <body>
+    <h1>Some table</h1>
+    <div id="table-wrapper"></div>
+  </body>
+  <script type="text/javascript" charset="utf-8">
+    // state variables
+    let state = {
+      sorting: null,
+      page: 1,
+      numRows: 30,
+      data: [],
+      headers: [],
+      filtered: []
+    };
+    var tooltip = d3
+      .select('#table-wrapper')
+      .append('div')
+      .attr('class', 'tooltip')
+      .style('opacity', 0);
+
+    d3.csv('./TechCrunchcontinentalUSA.csv', function(data) {
+      // create header with original row numbers
+      state.headers = ['row', ...Object.keys(data[0])];
+      state.data = data.map((row, i) => ({ row: (i + 1).toString(), ...row }));
+      let viewdata = state.data.slice(
+        (state.page - 1) * state.numRows,
+        state.page * state.numRows
+      );
+      // call render table with data;
+      renderTable(viewdata, state.headers);
+    });
+
+    setTimeout(function() {
+      let tableHeader = document.getElementById('table-header');
+      tableHeader.addEventListener('click', toggleSorting);
+
+      insertTableTools('table-wrapper');
+    }, 1000);
+
+    // asyn function to create and append table
+    function renderTable(data, columns) {
+      let tableWrapper = d3.select('div#table-wrapper'),
+        table = tableWrapper.append('table'),
+        thead = table.append('thead'),
+        tbody = table.append('tbody'),
+        nav = table.append('div');
+      // add id for table
+      table.attr('id', 'table');
+      // Append the header row
+      thead
+        .append('tr')
+        .attr('id', 'table-header')
+        .selectAll('th')
+        .data(columns)
+        .enter()
+        .append('th')
+        .text(function(column) {
+          return column;
+        })
+        .on('mouseover', d => hoverMouseOver(d))
+        .on('mouseout', handleMouseOut)
+        .append('span')
+        .attr('class', 'sorting arrow-up');
+      // Create a row for each object in the data
+      tbody
+        .selectAll('tr')
+        .data(data)
+        .enter()
+        .append('tr')
+        .selectAll('td')
+        .data(function(row) {
+          // get number of cells per row
+          return columns.map(function(column) {
+            return {
+              column: column,
+              value: row[column]
+            };
+          });
+        })
+        .enter()
+        .append('td')
+        .text(function(d) {
+          // fill in cell value
+          return d.value;
+        })
+        .on('mouseout', d => handleMouseOut(d))
+        .on('mouseover', hoverMouseOver);
+
+      return tableWrapper;
+    }
+    reRenderTable = (newData, columns = state.headers) => {
+      let table = d3.select('div#table-wrapper').select('tbody');
+      table
+        .selectAll('tr')
+        .data(newData)
+        .selectAll('td')
+        .data(function(row) {
+          // get number of cells per row
+          return columns.map(function(column) {
+            return {
+              column: column,
+              value: row[column]
+            };
+          });
+        })
+        .text(function(d) {
+          // fill in cell value
+          return d.value;
+        });
+    };
+    // sorting function
+    function sort(items, property, direction) {
+      function compare(a, b) {
+        if (!a[property] && !b[property]) {
+          return 0;
+        } else if (a[property] && !b[property]) {
+          return -1;
+        } else if (!a[property] && b[property]) {
+          return 1;
+        } else {
+          const value1 = a[property].toString().toUpperCase(); // ignore upper and lowercase
+          const value2 = b[property].toString().toUpperCase(); // ignore upper and lowercase
+          if (value1 < value2) {
+            return direction === 0 ? -1 : 1;
+          } else if (value1 > value2) {
+            return direction === 0 ? 1 : -1;
+          } else {
+            return 0;
+          }
+        }
+      }
+      return items.sort(compare);
+    }
+    // call sort + rerender
+    toggleSorting = e => {
+      let span = e.target.closest('span');
+      if (!span) return;
+      let classList = e.target.classList,
+        selectedHeader = e.target.parentElement.textContent,
+        tableHeader = document.getElementById('table-header');
+
+      for (let i = 0; i < tableHeader.children.length; i++) {
+        if (tableHeader.children[i] !== e.target.parentElement) {
+          tableHeader.children[i].children[0].classList.remove('ase');
+          tableHeader.children[i].children[0].classList.remove('des');
+        }
+      }
+      // sort state.data then reRender table with sorted data
+      if (classList.contains('ase')) {
+        sort(state.data, selectedHeader, 1);
+        classList.remove('ase');
+        classList.toggle('des');
+      } else {
+        sort(state.data, selectedHeader, 0);
+        classList.remove('des');
+        classList.toggle('ase');
+      }
+      let viewdata = state.data.slice(
+        (state.page - 1) * state.numRows,
+        state.page * state.numRows
+      );
+
+      reRenderTable(viewdata, state.headers);
+
+      // set sorting type
+      state.sorting =
+        selectedHeader +
+        (classList.contains('aes') ? ' ascending' : ' descending');
+    };
+    // insertSearchInput = id => {
+    //   console.log('test');
+    //   const searchNode =
+    //       "<div class='search-wrapper' id='search-input-wrapper'><input type='text' class='input' id='search-input'/><button class='btn' id='search-btn'> Search </button></div>",
+    //     wrapper = new DOMParser().parseFromString(searchNode, 'text/html'),
+    //     node = document.getElementById(id);
+
+    //   node.insertBefore(wrapper.body.firstChild, node.childNodes[0]);
+    // };
+
+    insertTableTools = id => {
+      let toolWrapper = d3
+          .select(`#${id}`)
+          .insert('div', ':first-child')
+          .attr('class', 'tools-wrapper'),
+        searchWrapper = toolWrapper.append('div').attr('id', 'search-form'),
+        navBtn = toolWrapper.append('div').attr('class', 'nav-btn-wrapper');
+
+      searchWrapper
+        .append('select')
+        .attr('name', 'select')
+        .selectAll('option')
+        .data(['all', ...state.headers])
+        .enter()
+        .append('option')
+        .text(d => d);
+      searchWrapper.append('input').attr('name', 'param');
+      searchWrapper
+        .append('button')
+        .text(d => 'Search')
+        .on('click', () => {
+          let form = document.getElementById('search-form'),
+            formSelect = form.children.namedItem('select').value,
+            formInput = form.children.namedItem('param').value;
+
+          search(formInput, formSelect);
+        });
+
+      navBtn
+        .attr('id', 'nav-btn')
+        .data([{ text: 'last', id: 'last' }])
+        .append('button')
+        .text(d => d.text)
+        .attr('id', 'last')
+        .on('click', () => {
+          state.page--;
+          let viewdata = state.data.slice(
+            (state.page - 1) * state.numRows,
+            state.page * state.numRows
+          );
+          reRenderTable(viewdata, state.headers);
+        });
+      navBtn
+        .data([{ text: 'next', id: 'next' }])
+        .append('button')
+        .text(d => d.text)
+        .attr('id', 'next')
+        .on('click', () => {
+          state.page++;
+          let viewdata = state.data.slice(
+            (state.page - 1) * state.numRows,
+            state.page * state.numRows
+          );
+          reRenderTable(viewdata, state.headers);
+        });
+    };
+
+    //search function
+    search = (val, param) => {
+      let table = document.getElementById('table');
+      table.remove();
+      val = val.toLowerCase();
+
+      if (val === '') {
+        state.page = 1;
+        let viewdata = state.data.slice(
+          (state.page - 1) * state.numRows,
+          state.page * state.numRows
+        );
+        // call render table with data;
+        renderTable(viewdata, state.headers);
+      } else {
+        if (param != 'all') {
+          // search when there is specific column
+          state.filtered = state.data.filter(obj => {
+            if (obj[param].toLowerCase() === val) {
+              return obj;
+            }
+          });
+
+          state.page = 1;
+          let viewdata = state.filtered.slice(
+            (state.page - 1) * state.numRows,
+            state.page * state.numRows
+          );
+
+          renderTable(viewdata, state.headers);
+        } else {
+          // search all column
+          state.filtered = state.data.filter(obj => {
+            let downCased = Object.values(obj).filter(value => {
+              if (typeof value === 'string') {
+                return value.toLocaleLowerCase();
+              }
+            });
+            if (downCased.includes(val)) {
+              return obj;
+            }
+          });
+
+          state.page = 1;
+          let viewdata = state.filtered.slice(
+            (state.page - 1) * state.numRows,
+            state.page * state.numRows
+          );
+
+          renderTable(viewdata, state.headers);
+        }
+      }
+    };
+
+    htmlCollectionToArr = (collection, firstEmpty = false) => {
+      // collection == [ domObj ]
+      let res = [];
+      if (firstEmpty) {
+        res.push('all');
+      }
+      for (let i = 0; i < collection.length; i++) {
+        res.push(collection[i].textContent);
+      }
+      return res;
+    };
+    // hover over cell function
+    hoverMouseOver = d => {
+      // only if e.target is th or td tag
+      if (
+        d3.event.target.tagName === 'TH' ||
+        d3.event.target.tagName === 'TD'
+      ) {
+        const rowNumber =
+            d3.event.target.parentElement.firstElementChild.textContent,
+          cellWidth = d3.event.target.offsetWidth,
+          tooltipContent =
+            d3.event.target.tagName === 'TH'
+              ? `<span>Type:${d}</span><br/><span>Filter:${
+                  state.sorting
+                }</span>`
+              : `<span>${d.column}</span><br/><span>Row:${rowNumber}</span>`;
+        // set background
+        d3.event.target.style.background = 'rgba(101, 163, 224, 0.4)';
+        // set tool tip style
+        tooltip
+          .html(tooltipContent)
+          .style('opacity', 0.9)
+          .style('padding', '10px')
+          .style('left', d3.event.target.offsetLeft + cellWidth + 8 + 'px')
+          .style('top', d3.event.pageY - 28 + 'px');
+      } else {
+        return;
+      }
+    };
+    // when mouse out, set it back to previous color
+    handleMouseOut = () => {
+      // reset background color,
+      d3.event.target.style.background = '';
+      // reset tool tip
+      tooltip
+        .html('')
+        .style('opacity', 0)
+        .style('padding', '0px');
+    };
+  </script>
+</html>
